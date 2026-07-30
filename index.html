@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Checklists</title>
+
+<!-- Launch fullscreen from the iPhone Home Screen (no browser bars) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Checklists">
+<meta name="theme-color" content="#0b0b0f">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%234f8cff'/%3E%3Cpath d='M52 92l22 22 44-52' fill='none' stroke='white' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+
+<style>
+  :root{
+    --bg:#0b0b0f;
+    --bg2:#15151c;
+    --card:#1c1c26;
+    --card2:#24242f;
+    --text:#f2f2f7;
+    --muted:#8e8e99;
+    --line:#2c2c38;
+    --accent:#4f8cff;
+    --accent-soft:#4f8cff26;
+    --danger:#ff5a5f;
+    --done:#5c5c6b;
+    --warm:#E2A73B;
+    --warm-ink:#1a1200;
+  }
+  [data-theme="light"]{
+    --bg:#f2f2f7;
+    --bg2:#ffffff;
+    --card:#ffffff;
+    --card2:#f6f6fa;
+    --text:#111114;
+    --muted:#8a8a90;
+    --line:#e5e5ea;
+    --accent:#0a84ff;
+    --accent-soft:#0a84ff1a;
+    --danger:#ff3b30;
+    --done:#b3b3ba;
+    --warm:#C8871B;
+    --warm-ink:#fff6e6;
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+    display:flex;flex-direction:column;
+    height:100dvh;
+    overflow:hidden;
+    -webkit-user-select:none;user-select:none;
+  }
+
+  /* ---------- Header ---------- */
+  header{padding:calc(env(safe-area-inset-top) + 12px) 18px 6px;background:var(--bg);}
+  .toprow{display:flex;align-items:flex-start;justify-content:space-between;}
+  .stamp{
+    font-family:"SFMono-Regular",Menlo,Consolas,"Courier New",monospace;
+    font-weight:700;font-size:11px;letter-spacing:.12em;
+    color:var(--warm-ink);background:var(--warm);
+    padding:5px 9px;border-radius:3px;transform:rotate(-2deg);
+    display:inline-block;
+  }
+  .title{
+    font-family:Baskerville,"Baskerville Old Face","Libre Baskerville",Georgia,"Times New Roman",serif;
+    font-size:34px;font-weight:700;letter-spacing:-.2px;line-height:1.05;margin-top:12px;
+  }
+  .sublbl{font-size:12px;color:var(--muted);margin-top:5px;font-weight:500;}
+  .iconbtn{
+    width:36px;height:36px;border:none;border-radius:11px;
+    background:var(--card);color:var(--text);
+    font-size:17px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;flex:0 0 auto;
+  }
+  .iconbtn:active{transform:scale(.92);}
+
+  /* ---------- Week strip (compact) ---------- */
+  .week{
+    display:flex;gap:4px;margin:12px 16px 2px;
+    background:var(--card);border:1px solid var(--line);border-radius:13px;
+    padding:10px 8px;
+  }
+  .day{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;}
+  .day svg{display:block;}
+  .day .dlabel{
+    font-family:"SFMono-Regular",Menlo,Consolas,monospace;
+    font-size:9px;letter-spacing:.04em;color:var(--muted);
+  }
+  .day.today .dlabel{color:var(--warm);font-weight:700;}
+
+  /* ---------- Tabs ---------- */
+  .tabs{display:flex;gap:8px;overflow-x:auto;padding:12px 16px 6px;scrollbar-width:none;}
+  .tabs::-webkit-scrollbar{display:none;}
+  .tab{
+    flex:0 0 auto;padding:9px 15px;border-radius:9px;
+    background:var(--card);color:var(--muted);
+    font-size:14px;font-weight:700;letter-spacing:.2px;border:none;cursor:pointer;
+    white-space:nowrap;position:relative;
+  }
+  .tab.active{background:var(--accent);color:#fff;}
+  .tab.active::after{content:"⋯";margin-left:7px;opacity:.75;font-weight:800;}
+  .tab:active{transform:scale(.96);}
+  .tab.add{background:transparent;color:var(--accent);border:1.5px dashed var(--line);font-weight:800;padding:9px 13px;border-radius:9px;}
+
+  /* ---------- List ---------- */
+  main{flex:1;overflow-y:auto;padding:6px 14px 120px;-webkit-overflow-scrolling:touch;}
+  .listhead{display:flex;align-items:center;justify-content:space-between;padding:6px 4px 10px;}
+  .listname{font-size:19px;font-weight:800;letter-spacing:-.3px;}
+  .managebtn{background:none;border:none;color:var(--accent);font-size:15px;font-weight:700;cursor:pointer;}
+
+  .items{list-style:none;margin:0;padding:0;border-radius:16px;overflow:hidden;background:var(--card);}
+  .item{display:flex;align-items:center;gap:12px;padding:14px;border-bottom:1px solid var(--line);}
+  .item:last-child{border-bottom:none;}
+  .check{
+    width:26px;height:26px;border-radius:50%;border:2px solid var(--done);
+    flex:0 0 auto;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;
+  }
+  .check svg{width:15px;height:15px;opacity:0;transform:scale(.5);transition:all .15s;}
+  .item.done .check{background:var(--accent);border-color:var(--accent);}
+  .item.done .check svg{opacity:1;transform:scale(1);}
+  .item.done .txt{color:var(--done);text-decoration:line-through;}
+  .txt{flex:1;font-size:17px;line-height:1.3;outline:none;word-break:break-word;-webkit-user-select:text;user-select:text;padding:2px 0;}
+  .del{
+    background:none;border:none;color:var(--danger);font-size:20px;
+    width:30px;height:30px;flex:0 0 auto;display:none;cursor:pointer;
+    align-items:center;justify-content:center;border-radius:8px;
+  }
+  body.editing .del{display:flex;}
+  body.editing .check{opacity:.4;}
+  .empty{text-align:center;color:var(--muted);font-size:15px;padding:40px 20px;}
+
+  /* ---------- Add bar ---------- */
+  .addbar{
+    position:fixed;left:0;right:0;bottom:0;
+    padding:10px 14px calc(env(safe-area-inset-bottom) + 12px);
+    background:linear-gradient(to top,var(--bg) 70%,transparent);display:flex;gap:10px;
+  }
+  .addinput{
+    flex:1;padding:14px 16px;border-radius:14px;border:1px solid var(--line);
+    background:var(--card2);color:var(--text);font-size:16px;outline:none;
+    -webkit-user-select:text;user-select:text;
+  }
+  .addinput::placeholder{color:var(--muted);}
+  .addbtn{width:50px;border:none;border-radius:14px;background:var(--accent);color:#fff;font-size:26px;cursor:pointer;flex:0 0 auto;}
+  .addbtn:active{transform:scale(.94);}
+
+  /* ---------- Sheet ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center;z-index:50;}
+  .overlay.show{display:flex;}
+  .sheet{
+    width:100%;max-width:520px;background:var(--bg2);
+    border-radius:22px 22px 0 0;padding:20px 18px calc(env(safe-area-inset-bottom) + 18px);animation:up .22s ease;
+  }
+  @keyframes up{from{transform:translateY(100%);}to{transform:translateY(0);}}
+  .sheet h3{margin:2px 0 14px;font-size:18px;font-weight:800;}
+  .sheet input{
+    width:100%;padding:14px 16px;border-radius:14px;border:1px solid var(--line);
+    background:var(--card2);color:var(--text);font-size:17px;outline:none;margin-bottom:12px;
+    -webkit-user-select:text;user-select:text;
+  }
+  .sheetrow{display:flex;gap:10px;}
+  .btn{flex:1;padding:14px;border:none;border-radius:14px;font-size:16px;font-weight:700;cursor:pointer;}
+  .btn.primary{background:var(--accent);color:#fff;}
+  .btn.ghost{background:var(--card);color:var(--text);}
+  .btn.danger{background:var(--danger);color:#fff;}
+  .btn:active{transform:scale(.97);}
+  .sheet .btn.wide{width:100%;flex:none;margin-top:4px;}
+</style>
+</head>
+<body data-theme="dark">
+
+  <header>
+    <div class="toprow">
+      <div>
+        <span class="stamp" id="dateLbl"></span>
+        <div class="title">Checklists</div>
+        <div class="sublbl">Each day starts fresh — nothing carries over checked</div>
+      </div>
+      <button class="iconbtn" id="themeBtn" title="Theme">🌙</button>
+    </div>
+  </header>
+
+  <div class="week" id="week"></div>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <main>
+    <div class="listhead">
+      <div class="listname" id="listName"></div>
+      <button class="managebtn" id="manageBtn">Edit</button>
+    </div>
+    <ul class="items" id="items"></ul>
+    <div class="empty" id="empty" style="display:none">No items yet. Add one below 👇</div>
+  </main>
+
+  <div class="addbar">
+    <input class="addinput" id="addInput" placeholder="Add an item…" enterkeyhint="done">
+    <button class="addbtn" id="addBtn">+</button>
+  </div>
+
+  <div class="overlay" id="tabOverlay">
+    <div class="sheet">
+      <h3 id="tabSheetTitle">New checklist</h3>
+      <input id="tabNameInput" placeholder="Name (e.g. OCGs)" enterkeyhint="done">
+      <div class="sheetrow">
+        <button class="btn ghost" id="tabCancel">Cancel</button>
+        <button class="btn primary" id="tabSave">Save</button>
+      </div>
+      <button class="btn danger wide" id="tabDelete" style="display:none">Delete this checklist</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  var KEY = "jn_checklists_v2";
+  var uid = function(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); };
+
+  // padded date key, e.g. 2026-07-30 — one unique string per calendar day
+  function dateKey(d){
+    d = d || new Date();
+    var m = String(d.getMonth()+1).padStart(2,"0");
+    var day = String(d.getDate()).padStart(2,"0");
+    return d.getFullYear()+"-"+m+"-"+day;
+  }
+
+  // ---------- State ----------
+  // records[dateKey] = { itemId: true } — checked state is stored PER DAY,
+  // so a check only ever affects the day it was made on.
+  var state = load();
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(KEY);
+      if(raw) return migrate(JSON.parse(raw));
+    }catch(e){}
+    // migrate from an older v1 save if present
+    try{
+      var old = localStorage.getItem("jn_checklists_v1");
+      if(old) return migrate(JSON.parse(old));
+    }catch(e){}
+    return {
+      theme:"dark",
+      activeTab:null,
+      records:{},
+      tabs:[
+        {id:uid(), name:"TASKS", items:[]},
+        {id:uid(), name:"OCGs",  items:[]}
+      ]
+    };
+  }
+
+  function migrate(s){
+    if(!s.records) s.records = {};
+    // old model stored `done` on each item — fold today's checks into a record
+    var today = dateKey();
+    (s.tabs||[]).forEach(function(tab){
+      (tab.items||[]).forEach(function(it){
+        if(it.done){ (s.records[today] = s.records[today]||{})[it.id] = true; }
+        delete it.done;
+      });
+    });
+    delete s.history; delete s.lastReset;
+    if(!s.theme) s.theme = "dark";
+    return s;
+  }
+
+  function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+
+  function activeTab(){
+    var t = state.tabs.filter(function(x){return x.id===state.activeTab;})[0];
+    if(!t){ t = state.tabs[0]; state.activeTab = t ? t.id : null; }
+    return t;
+  }
+
+  function todayRecord(){
+    var k = dateKey();
+    if(!state.records[k]) state.records[k] = {};
+    return state.records[k];
+  }
+
+  // ---------- New-day handling ----------
+  var currentKey = dateKey();
+  function checkForNewDay(){
+    var k = dateKey();
+    if(k !== currentKey){
+      currentKey = k;               // a fresh (empty) record => everything unchecked
+      renderDate(); renderWeek(); renderItems();
+    }
+  }
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) checkForNewDay(); });
+  window.addEventListener("focus", checkForNewDay);
+  setInterval(checkForNewDay, 30000);
+
+  // ---------- DOM refs ----------
+  var elTabs = document.getElementById("tabs");
+  var elItems = document.getElementById("items");
+  var elListName = document.getElementById("listName");
+  var elEmpty = document.getElementById("empty");
+  var elDate = document.getElementById("dateLbl");
+  var elWeek = document.getElementById("week");
+
+  // ---------- Rendering ----------
+  function renderDate(){
+    elDate.textContent = new Date()
+      .toLocaleDateString("en-US",{weekday:"short", month:"short", day:"numeric"})
+      .toUpperCase();
+  }
+
+  function allItems(){
+    var out = [];
+    state.tabs.forEach(function(t){ t.items.forEach(function(it){ out.push(it); }); });
+    return out;
+  }
+
+  function ringSVG(frac, isToday){
+    var r = 11, c = 2*Math.PI*r;
+    var offset = c * (1 - frac);
+    var stroke = isToday ? "var(--warm)" : "var(--accent)";
+    return '<svg width="28" height="28" viewBox="0 0 28 28">'
+      + '<circle cx="14" cy="14" r="'+r+'" fill="none" stroke="var(--line)" stroke-width="3"/>'
+      + '<circle cx="14" cy="14" r="'+r+'" fill="none" stroke="'+stroke+'" stroke-width="3" '
+      + 'stroke-linecap="round" stroke-dasharray="'+c.toFixed(2)+'" '
+      + 'stroke-dashoffset="'+(frac<=0 ? c.toFixed(2) : offset.toFixed(2))+'" '
+      + 'transform="rotate(-90 14 14)"/></svg>';
+  }
+
+  function renderWeek(){
+    var items = allItems();
+    var total = items.length;
+    var todayKey = dateKey();
+    var now = new Date();
+    var html = "";
+    for(var i=6;i>=0;i--){                       // trailing 7 days, today on the right
+      var d = new Date(now); d.setDate(now.getDate()-i);
+      var key = dateKey(d);
+      var rec = state.records[key] || {};
+      var done = 0;
+      items.forEach(function(it){ if(rec[it.id]) done++; });
+      var frac = total>0 ? done/total : 0;
+      var isToday = key===todayKey;
+      var label = isToday ? "TODAY"
+        : d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2).toUpperCase();
+      html += '<div class="day'+(isToday?" today":"")+'">'+ringSVG(frac,isToday)
+            + '<span class="dlabel">'+label+'</span></div>';
+    }
+    elWeek.innerHTML = html;
+  }
+
+  function renderItems(){
+    var tab = activeTab();
+    var rec = todayRecord();
+    elListName.textContent = tab ? tab.name : "";
+    elItems.innerHTML = "";
+    if(!tab){ elEmpty.style.display="block"; return; }
+    elEmpty.style.display = tab.items.length ? "none" : "block";
+
+    tab.items.forEach(function(it){
+      var checked = !!rec[it.id];
+      var li = document.createElement("li");
+      li.className = "item" + (checked ? " done":"");
+
+      var chk = document.createElement("div");
+      chk.className = "check";
+      chk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+      chk.onclick = function(){
+        if(document.body.classList.contains("editing")) return;
+        var r = todayRecord();
+        if(r[it.id]) delete r[it.id]; else r[it.id] = true;
+        save(); renderItems(); renderWeek();
+      };
+
+      var txt = document.createElement("div");
+      txt.className = "txt";
+      txt.textContent = it.text;
+      txt.contentEditable = "true";
+      txt.spellcheck = false;
+      txt.onblur = function(){
+        var v = txt.textContent.trim();
+        if(v){ it.text = v; } else { txt.textContent = it.text; }
+        save();
+      };
+      txt.onkeydown = function(e){ if(e.key==="Enter"){ e.preventDefault(); txt.blur(); } };
+
+      var del = document.createElement("button");
+      del.className = "del";
+      del.innerHTML = "✕";
+      del.onclick = function(){
+        tab.items = tab.items.filter(function(x){return x.id!==it.id;});
+        // clean this item out of every day's record
+        Object.keys(state.records).forEach(function(k){ delete state.records[k][it.id]; });
+        save(); renderItems(); renderWeek();
+      };
+
+      li.appendChild(chk); li.appendChild(txt); li.appendChild(del);
+      elItems.appendChild(li);
+    });
+  }
+
+  // ---------- Add item ----------
+  var addInput = document.getElementById("addInput");
+  var addBtn = document.getElementById("addBtn");
+  function addItem(){
+    var v = addInput.value.trim();
+    if(!v) return;
+    var tab = activeTab();
+    if(!tab) return;
+    tab.items.push({id:uid(), text:v});
+    addInput.value = "";
+    save(); renderItems(); renderWeek();
+  }
+  addBtn.onclick = addItem;
+  addInput.addEventListener("keydown", function(e){ if(e.key==="Enter") addItem(); });
+
+  // ---------- Edit mode ----------
+  var manageBtn = document.getElementById("manageBtn");
+  manageBtn.onclick = function(){
+    document.body.classList.toggle("editing");
+    manageBtn.textContent = document.body.classList.contains("editing") ? "Done" : "Edit";
+  };
+  function exitEditing(){ document.body.classList.remove("editing"); manageBtn.textContent = "Edit"; }
+
+  // ---------- Theme ----------
+  var themeBtn = document.getElementById("themeBtn");
+  function applyTheme(){
+    document.body.setAttribute("data-theme", state.theme);
+    themeBtn.textContent = state.theme==="dark" ? "☀️" : "🌙";
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", state.theme==="dark" ? "#0b0b0f" : "#f2f2f7");
+  }
+  themeBtn.onclick = function(){ state.theme = state.theme==="dark" ? "light" : "dark"; save(); applyTheme(); };
+
+  // ---------- Tab sheet ----------
+  var overlay = document.getElementById("tabOverlay");
+  var tabSheetTitle = document.getElementById("tabSheetTitle");
+  var tabNameInput = document.getElementById("tabNameInput");
+  var tabSave = document.getElementById("tabSave");
+  var tabCancel = document.getElementById("tabCancel");
+  var tabDelete = document.getElementById("tabDelete");
+  var sheetMode = "new";
+
+  function openNewTab(){
+    sheetMode = "new";
+    tabSheetTitle.textContent = "New checklist";
+    tabNameInput.value = "";
+    tabDelete.style.display = "none";
+    overlay.classList.add("show");
+    setTimeout(function(){ tabNameInput.focus(); }, 150);
+  }
+  function openEditTab(){
+    sheetMode = "edit";
+    var tab = activeTab();
+    tabSheetTitle.textContent = "Rename checklist";
+    tabNameInput.value = tab ? tab.name : "";
+    tabDelete.style.display = state.tabs.length>1 ? "block" : "none";
+    overlay.classList.add("show");
+    setTimeout(function(){ tabNameInput.focus(); tabNameInput.select(); }, 150);
+  }
+  function closeSheet(){ overlay.classList.remove("show"); }
+  tabCancel.onclick = closeSheet;
+  overlay.onclick = function(e){ if(e.target===overlay) closeSheet(); };
+
+  tabSave.onclick = function(){
+    var v = tabNameInput.value.trim();
+    if(!v){ closeSheet(); return; }
+    if(sheetMode==="new"){
+      var t = {id:uid(), name:v, items:[]};
+      state.tabs.push(t); state.activeTab = t.id;
+    }else{
+      var tab = activeTab(); if(tab) tab.name = v;
+    }
+    save(); closeSheet(); renderTabs(); renderItems();
+  };
+  tabDelete.onclick = function(){
+    var tab = activeTab();
+    if(!tab || state.tabs.length<=1){ closeSheet(); return; }
+    // drop this list's items from every day's record
+    tab.items.forEach(function(it){
+      Object.keys(state.records).forEach(function(k){ delete state.records[k][it.id]; });
+    });
+    state.tabs = state.tabs.filter(function(x){return x.id!==tab.id;});
+    state.activeTab = state.tabs[0].id;
+    save(); closeSheet(); renderTabs(); renderItems(); renderWeek();
+  };
+  tabNameInput.addEventListener("keydown", function(e){ if(e.key==="Enter") tabSave.onclick(); });
+
+  function renderTabs(){
+    elTabs.innerHTML = "";
+    state.tabs.forEach(function(tab){
+      var b = document.createElement("button");
+      b.className = "tab" + (tab.id===state.activeTab ? " active":"");
+      b.textContent = tab.name;
+      b.onclick = function(){
+        if(tab.id===state.activeTab){ openEditTab(); return; }
+        state.activeTab = tab.id; save();
+        exitEditing(); renderTabs(); renderItems();
+      };
+      elTabs.appendChild(b);
+    });
+    var add = document.createElement("button");
+    add.className = "tab add";
+    add.textContent = "＋ New";
+    add.onclick = openNewTab;
+    elTabs.appendChild(add);
+  }
+
+  // ---------- Init ----------
+  activeTab();
+  applyTheme();
+  renderDate();
+  renderTabs();
+  renderWeek();
+  renderItems();
+  save();
+})();
+</script>
+</body>
+</html>
