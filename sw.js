@@ -1,47 +1,40 @@
-// Service worker — makes the app installable and fast, WITHOUT trapping you on an
-// old version. The page itself is fetched network-first, so uploading a new
-// index.html shows up right away; only the icons are cached aggressively.
-const CACHE = "shared-tasks-v13";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-512.png"];
+/* Checklists service worker
+   Bump CACHE (e.g. v1 -> v2) whenever you upload a new index.html,
+   so phones pick up the new version instead of a stale cache. */
+const CACHE = "checklists-v1";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./apple-touch-icon.png"
+];
 
-self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+// Install: pre-cache the app shell
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())
   );
-  self.clients.claim();
 });
 
-self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
+// Activate: drop old caches so updates aren't stuck
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
 
-  // Never cache Supabase API calls — always hit the network for fresh data.
-  if (url.hostname.endsWith("supabase.co")) return;
-
-  const isPage =
-    e.request.mode === "navigate" ||
-    url.pathname.endsWith("/") ||
-    url.pathname.endsWith("index.html");
-
-  if (isPage) {
-    // Network-first for the app page: always try to get the newest version,
-    // fall back to the cached copy only when offline.
-    e.respondWith(
-      fetch(e.request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-          return res;
-        })
-        .catch(() => caches.match(e.request))
-    );
-    return;
-  }
-
-  // Everything else (icons, manifest): cache-first for speed.
-  e.respondWith(caches.match(e.request).then((cached) => cached || fetch(e.request)));
+// Fetch: network-first (so you always get the freshest page when online),
+// falling back to cache when offline.
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  event.respondWith(
+    fetch(event.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(event.request, copy)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(event.request).then((r) => r || caches.match("./index.html")))
+  );
 });
