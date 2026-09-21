@@ -356,16 +356,22 @@
     return out;
   }
 
-  function ringSVG(frac, isToday){
-    var r = 11, c = 2*Math.PI*r;
-    var offset = c * (1 - frac);
-    var stroke = isToday ? "var(--warm)" : "var(--accent)";
+  // Day marker: empty ring when nothing's done, otherwise a checkmark whose
+  // color steps up with the share of items completed that day.
+  //   1+ done, under 25% .. gray      25%+ .. gold
+  //   50%+ .. blue                    75%+ .. green
+  function dayMark(frac, done){
+    if(done<=0){
+      return '<svg width="28" height="28" viewBox="0 0 28 28">'
+        + '<circle cx="14" cy="14" r="11" fill="none" stroke="var(--line)" stroke-width="3"/></svg>';
+    }
+    var color = "#8e8e99";                 // 1+ done but below 25%
+    if(frac>=0.75)      color = "#46d160"; // green
+    else if(frac>=0.50) color = "#4f8cff"; // blue
+    else if(frac>=0.25) color = "#f0a93b"; // gold
     return '<svg width="28" height="28" viewBox="0 0 28 28">'
-      + '<circle cx="14" cy="14" r="'+r+'" fill="none" stroke="var(--line)" stroke-width="3"/>'
-      + '<circle cx="14" cy="14" r="'+r+'" fill="none" stroke="'+stroke+'" stroke-width="3" '
-      + 'stroke-linecap="round" stroke-dasharray="'+c.toFixed(2)+'" '
-      + 'stroke-dashoffset="'+(frac<=0 ? c.toFixed(2) : offset.toFixed(2))+'" '
-      + 'transform="rotate(-90 14 14)"/></svg>';
+      + '<path d="M7 14.5l4.5 4.5L21 8.5" fill="none" stroke="'+color+'" '
+      + 'stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   }
 
   function renderWeek(){
@@ -384,7 +390,7 @@
       var isToday = key===todayKey;
       var label = isToday ? "TODAY"
         : d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2).toUpperCase();
-      html += '<div class="day'+(isToday?" today":"")+'">'+ringSVG(frac,isToday)
+      html += '<div class="day'+(isToday?" today":"")+'">'+dayMark(frac,done)
             + '<span class="dlabel">'+label+'</span></div>';
     }
     elWeek.innerHTML = html;
