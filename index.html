@@ -102,11 +102,17 @@
     background:var(--card);color:var(--muted);
     font-size:14px;font-weight:700;letter-spacing:.2px;border:none;cursor:pointer;
     white-space:nowrap;position:relative;
+    touch-action:pan-x;
   }
   .tab.active{background:var(--accent);color:#fff;}
   .tab.active::after{content:"⋯";margin-left:7px;opacity:.75;font-weight:800;}
   .tab:active{transform:scale(.96);}
   .tab.add{background:transparent;color:var(--accent);border:1.5px dashed var(--line);font-weight:800;padding:9px 13px;border-radius:9px;}
+  .tab.dragging{
+    opacity:.95;transform:scale(1.05);z-index:10;
+    box-shadow:0 8px 22px rgba(0,0,0,.45);
+    transition:none;
+  }
 
   /* ---------- List ---------- */
   main{flex:1;overflow-y:auto;padding:6px 14px 120px;-webkit-overflow-scrolling:touch;}
@@ -115,8 +121,33 @@
   .managebtn{background:none;border:none;color:var(--accent);font-size:15px;font-weight:700;cursor:pointer;}
 
   .items{list-style:none;margin:0;padding:0;border-radius:16px;overflow:hidden;background:var(--card);}
-  .item{display:flex;align-items:center;gap:12px;padding:14px;border-bottom:1px solid var(--line);}
-  .item:last-child{border-bottom:none;}
+
+  /* Each row: a sliding foreground (.item-fg) over a red delete backdrop (.item-bg) */
+  .item{position:relative;overflow:hidden;}
+  .item-bg{
+    position:absolute;inset:0;display:flex;align-items:stretch;justify-content:flex-end;
+    background:var(--danger);
+  }
+  .swipe-del{
+    background:none;border:none;color:#fff;font-size:15px;font-weight:800;letter-spacing:.02em;
+    min-width:84px;padding:0 20px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+  }
+  .item-fg{
+    position:relative;display:flex;align-items:center;gap:12px;padding:14px;
+    background:var(--card);border-bottom:1px solid var(--line);
+    touch-action:pan-y;will-change:transform;
+  }
+  .item:last-child .item-fg{border-bottom:none;}
+  .item-fg.snap{transition:transform .22s cubic-bezier(.2,.7,.2,1);}
+
+  .item.dragging{z-index:10;}
+  .item.dragging .item-fg{
+    background:var(--card2);border-bottom:none;border-radius:14px;
+    box-shadow:0 10px 26px rgba(0,0,0,.45);
+    transition:none;
+  }
+
   .check{
     width:26px;height:26px;border-radius:50%;border:2px solid var(--done);
     flex:0 0 auto;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;
@@ -133,6 +164,12 @@
   }
   body.editing .del{display:flex;}
   body.editing .check{opacity:.4;}
+  /* drag handle hint appears in edit mode */
+  .grip{
+    display:none;color:var(--muted);font-size:18px;flex:0 0 auto;
+    width:22px;text-align:center;cursor:grab;line-height:1;letter-spacing:-1px;
+  }
+  body.editing .grip{display:block;}
   .empty{text-align:center;color:var(--muted);font-size:15px;padding:40px 20px;}
 
   /* ---------- Add bar ---------- */
@@ -353,9 +390,19 @@
     elWeek.innerHTML = html;
   }
 
+  // Swipe tuning
+  var SWIPE_OPEN = 84;    // px revealed when snapped open (matches Delete button width)
+  var SWIPE_FULL = 150;   // swipe past this on release => delete immediately
+  var openRow = null;     // the currently swiped-open <li>, if any
+
+  function closeOpenRow(animate){
+    if(openRow && openRow._close) openRow._close(animate);
+  }
+
   function renderItems(){
     var tab = activeTab();
     var rec = todayRecord();
+    openRow = null;
     elListName.textContent = tab ? tab.name : "";
     elItems.innerHTML = "";
     if(!tab){ elEmpty.style.display="block"; return; }
@@ -363,14 +410,33 @@
 
     tab.items.forEach(function(it){
       var checked = !!rec[it.id];
+
       var li = document.createElement("li");
       li.className = "item" + (checked ? " done":"");
+      li.dataset.id = it.id;
+
+      // red backdrop with a Delete button (revealed by swiping left)
+      var bg = document.createElement("div");
+      bg.className = "item-bg";
+      var swipeDel = document.createElement("button");
+      swipeDel.className = "swipe-del";
+      swipeDel.textContent = "Delete";
+      bg.appendChild(swipeDel);
+
+      // sliding foreground
+      var fg = document.createElement("div");
+      fg.className = "item-fg";
+
+      var grip = document.createElement("div");
+      grip.className = "grip";
+      grip.textContent = "⣿";
 
       var chk = document.createElement("div");
       chk.className = "check";
       chk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
       chk.onclick = function(){
         if(document.body.classList.contains("editing")) return;
+        if(li.classList.contains("open")){ closeOpenRow(true); return; }
         var r = todayRecord();
         if(r[it.id]) delete r[it.id]; else r[it.id] = true;
         save(); renderItems(); renderWeek();
@@ -391,17 +457,155 @@
       var del = document.createElement("button");
       del.className = "del";
       del.innerHTML = "✕";
-      del.onclick = function(){
-        tab.items = tab.items.filter(function(x){return x.id!==it.id;});
-        // clean this item out of every day's record
-        Object.keys(state.records).forEach(function(k){ delete state.records[k][it.id]; });
-        save(); renderItems(); renderWeek();
-      };
+      del.onclick = function(){ removeItem(tab, it); };
 
-      li.appendChild(chk); li.appendChild(txt); li.appendChild(del);
+      fg.appendChild(grip);
+      fg.appendChild(chk);
+      fg.appendChild(txt);
+      fg.appendChild(del);
+
+      li.appendChild(bg);
+      li.appendChild(fg);
       elItems.appendChild(li);
+
+      swipeDel.onclick = function(){ removeItem(tab, it); };
+      attachItemGestures(li, fg, it, tab);
     });
   }
+
+  function removeItem(tab, it){
+    tab.items = tab.items.filter(function(x){return x.id!==it.id;});
+    // clean this item out of every day's record
+    Object.keys(state.records).forEach(function(k){ delete state.records[k][it.id]; });
+    save(); renderItems(); renderWeek();
+  }
+
+  // ---------- Item gestures: swipe-to-delete (always) + drag-reorder (Edit mode) ----------
+  var itemDrag = null;
+
+  function attachItemGestures(li, fg, it, tab){
+    var startX=0, startY=0, startOffset=0, curX=0, mode=null, lpTimer=null, pid=null;
+    var SWIPE_THRESH=10, VERT_CANCEL=12, LP_MS=350;
+
+    function closeRow(animate){
+      fg.classList.toggle("snap", !!animate);
+      fg.style.transform = "";
+      li.classList.remove("open");
+      if(openRow===li) openRow=null;
+    }
+    li._close = closeRow;
+
+    fg.addEventListener("pointerdown", function(e){
+      if(e.pointerType==="mouse" && e.button!==0) return;
+      // tapping the editable text should just place the caret — don't hijack
+      if(e.target && e.target.classList && e.target.classList.contains("txt") &&
+         !document.body.classList.contains("editing") && !li.classList.contains("open")){
+        // still allow horizontal swipe to start, but don't pre-close etc.
+      }
+      if(openRow && openRow!==li) closeOpenRow(true);
+      startX=e.clientX; startY=e.clientY; mode=null; pid=e.pointerId;
+      startOffset = li.classList.contains("open") ? -SWIPE_OPEN : 0;
+      fg.classList.remove("snap");
+      if(document.body.classList.contains("editing")){
+        lpTimer = setTimeout(function(){
+          if(mode===null){ mode="drag"; beginItemDrag(li, tab, startY, pid, fg); }
+        }, LP_MS);
+      }
+    });
+
+    fg.addEventListener("pointermove", function(e){
+      var dx=e.clientX-startX, dy=e.clientY-startY;
+      if(mode===null){
+        if(Math.abs(dx)>SWIPE_THRESH && Math.abs(dx)>Math.abs(dy)){
+          mode="swipe"; clearTimeout(lpTimer);
+          try{ fg.setPointerCapture(pid); }catch(_){}
+        } else if(Math.abs(dy)>VERT_CANCEL){
+          clearTimeout(lpTimer); mode="scroll";   // let the list scroll normally
+        }
+        return;
+      }
+      if(mode==="swipe"){
+        var t = startOffset + dx;
+        if(t>0) t=0;
+        if(t < -(SWIPE_FULL+40)) t = -(SWIPE_FULL+40);
+        curX=t;
+        fg.style.transform = "translateX("+t+"px)";
+        e.preventDefault();
+      } else if(mode==="drag"){
+        itemDragMove(e.clientY);
+        e.preventDefault();
+      }
+    });
+
+    function end(){
+      clearTimeout(lpTimer);
+      if(mode==="swipe"){
+        if(curX <= -SWIPE_FULL){
+          removeItem(tab, it);
+        } else if(curX <= -(SWIPE_OPEN*0.55)){
+          fg.classList.add("snap");
+          fg.style.transform = "translateX(-"+SWIPE_OPEN+"px)";
+          li.classList.add("open");
+          openRow = li;
+        } else {
+          closeRow(true);
+        }
+      } else if(mode==="drag"){
+        endItemDrag();
+      }
+      mode=null; curX=0;
+    }
+    fg.addEventListener("pointerup", end);
+    fg.addEventListener("pointercancel", end);
+  }
+
+  function beginItemDrag(li, tab, clientY, pid, fg){
+    itemDrag = { li:li, tab:tab, startY:clientY };
+    li.classList.add("dragging");
+    elItems.style.overflow = "visible";   // don't clip the lifted row
+    fg.style.touchAction = "none";        // stop the list scrolling while dragging
+    try{ fg.setPointerCapture(pid); }catch(_){}
+    if(navigator.vibrate) navigator.vibrate(12);
+  }
+
+  function itemDragMove(clientY){
+    if(!itemDrag) return;
+    var li = itemDrag.li;
+    var next = li.nextElementSibling;
+    if(next && next.classList.contains("item")){
+      var nr = next.getBoundingClientRect(), dr = li.getBoundingClientRect();
+      if(dr.top + dr.height/2 > nr.top + nr.height/2){
+        elItems.insertBefore(next, li);
+        itemDrag.startY += nr.height;
+      }
+    }
+    var prev = li.previousElementSibling;
+    if(prev && prev.classList.contains("item")){
+      var pr = prev.getBoundingClientRect(), dr2 = li.getBoundingClientRect();
+      if(dr2.top + dr2.height/2 < pr.top + pr.height/2){
+        elItems.insertBefore(li, prev);
+        itemDrag.startY -= pr.height;
+      }
+    }
+    li.style.transform = "translateY("+(clientY - itemDrag.startY)+"px)";
+  }
+
+  function endItemDrag(){
+    if(!itemDrag) return;
+    var li = itemDrag.li, tab = itemDrag.tab;
+    li.classList.remove("dragging");
+    li.style.transform = "";
+    elItems.style.overflow = "";
+    var fg = li.querySelector(".item-fg"); if(fg) fg.style.touchAction = "";
+    // rebuild the array to match the new DOM order
+    var order = [].slice.call(elItems.children).map(function(x){return x.dataset.id;});
+    tab.items.sort(function(a,b){ return order.indexOf(a.id) - order.indexOf(b.id); });
+    itemDrag = null;
+    save(); renderItems(); renderWeek();
+  }
+
+  // close an open swipe row when scrolling the list
+  document.querySelector("main").addEventListener("scroll", function(){ closeOpenRow(true); }, {passive:true});
 
   // ---------- Add item ----------
   var addInput = document.getElementById("addInput");
@@ -421,6 +625,7 @@
   // ---------- Edit mode ----------
   var manageBtn = document.getElementById("manageBtn");
   manageBtn.onclick = function(){
+    closeOpenRow(false);
     document.body.classList.toggle("editing");
     manageBtn.textContent = document.body.classList.contains("editing") ? "Done" : "Edit";
   };
@@ -489,17 +694,23 @@
   };
   tabNameInput.addEventListener("keydown", function(e){ if(e.key==="Enter") tabSave.onclick(); });
 
+  // ---------- Tabs (with long-press drag-to-reorder) ----------
+  var tabDrag = null;
+  var TAB_GAP = 8;
+
   function renderTabs(){
     elTabs.innerHTML = "";
     state.tabs.forEach(function(tab){
       var b = document.createElement("button");
       b.className = "tab" + (tab.id===state.activeTab ? " active":"");
       b.textContent = tab.name;
+      b.dataset.id = tab.id;
       b.onclick = function(){
         if(tab.id===state.activeTab){ openEditTab(); return; }
         state.activeTab = tab.id; save();
         exitEditing(); renderTabs(); renderItems();
       };
+      attachTabGestures(b, tab);
       elTabs.appendChild(b);
     });
     var add = document.createElement("button");
@@ -507,6 +718,78 @@
     add.textContent = "＋ New";
     add.onclick = openNewTab;
     elTabs.appendChild(add);
+  }
+
+  function attachTabGestures(b, tab){
+    var startX=0, startY=0, mode=null, lpTimer=null, pid=null;
+    var LP_MS=350, CANCEL=10;
+
+    b.addEventListener("pointerdown", function(e){
+      if(e.pointerType==="mouse" && e.button!==0) return;
+      startX=e.clientX; startY=e.clientY; mode=null; pid=e.pointerId;
+      lpTimer = setTimeout(function(){
+        if(mode===null){ mode="drag"; beginTabDrag(b, tab, startX, pid); }
+      }, LP_MS);
+    });
+    b.addEventListener("pointermove", function(e){
+      var dx=e.clientX-startX, dy=e.clientY-startY;
+      if(mode===null){
+        if(Math.abs(dx)>CANCEL || Math.abs(dy)>CANCEL){ clearTimeout(lpTimer); mode="scroll"; }
+        return;
+      }
+      if(mode==="drag"){ tabDragMove(e.clientX); e.preventDefault(); }
+    });
+    function end(){
+      clearTimeout(lpTimer);
+      if(mode==="drag"){ endTabDrag(); }
+      mode=null;
+    }
+    b.addEventListener("pointerup", end);
+    b.addEventListener("pointercancel", end);
+  }
+
+  function beginTabDrag(b, tab, clientX, pid){
+    tabDrag = { b:b, tab:tab, startX:clientX };
+    b.classList.add("dragging");
+    elTabs.style.touchAction = "none";
+    try{ b.setPointerCapture(pid); }catch(_){}
+    if(navigator.vibrate) navigator.vibrate(12);
+  }
+
+  function tabDragMove(clientX){
+    if(!tabDrag) return;
+    var b = tabDrag.b;
+    var next = b.nextElementSibling;
+    if(next && next.classList.contains("tab") && !next.classList.contains("add")){
+      var nr = next.getBoundingClientRect(), br = b.getBoundingClientRect();
+      if(br.left + br.width/2 > nr.left + nr.width/2){
+        elTabs.insertBefore(next, b);
+        tabDrag.startX += nr.width + TAB_GAP;
+      }
+    }
+    var prev = b.previousElementSibling;
+    if(prev && prev.classList.contains("tab")){
+      var pr = prev.getBoundingClientRect(), br2 = b.getBoundingClientRect();
+      if(br2.left + br2.width/2 < pr.left + pr.width/2){
+        elTabs.insertBefore(b, prev);
+        tabDrag.startX -= pr.width + TAB_GAP;
+      }
+    }
+    b.style.transform = "translateX("+(clientX - tabDrag.startX)+"px)";
+  }
+
+  function endTabDrag(){
+    if(!tabDrag) return;
+    elTabs.style.touchAction = "";
+    // rebuild state.tabs from the new DOM order
+    var order = [].slice.call(elTabs.children)
+      .filter(function(x){ return x.classList.contains("tab") && !x.classList.contains("add"); })
+      .map(function(x){ return x.dataset.id; });
+    state.tabs.sort(function(a,b){ return order.indexOf(a.id) - order.indexOf(b.id); });
+    tabDrag = null;
+    save();
+    // re-render replaces the dragged button, which also cancels the trailing click
+    renderTabs();
   }
 
   // ---------- Init ----------
